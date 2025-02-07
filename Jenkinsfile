@@ -1,44 +1,51 @@
 pipeline {
-	agent none
+    agent any
 
-	triggers {
-		pollSCM 'H/10 * * * *'
-	}
+    environment {
+        BUILD_ARTIFACT = "my-app.jar"
+    }
 
-	options {
-		disableConcurrentBuilds()
-		buildDiscarder(logRotator(numToKeepStr: '14'))
-	}
+    stages {
+        stage('Clone Repository') {
+            steps {
+                git branch: 'main', url: 'https://github.com/YOUR_GITHUB_USERNAME/gs-maven.git'
+            }
+        }
 
-	stages {
-		stage("test: baseline (jdk8)") {
-			agent {
-				docker {
-					image 'adoptopenjdk/openjdk8:latest'
-					args '-v $HOME/.m2:/tmp/jenkins-home/.m2'
-				}
-			}
-			options { timeout(time: 30, unit: 'MINUTES') }
-			steps {
-				sh 'test/run.sh'
-			}
-		}
+        stage('Build with Maven') {
+            steps {
+                script {
+                    bat 'mvn clean package'
+                }
+            }
+        }
 
-	}
+        stage('Archive Artifacts') {
+            steps {
+                archiveArtifacts artifacts: '**/target/*.jar', fingerprint: true
+            }
+        }
 
-	post {
-		changed {
-			script {
-				slackSend(
-						color: (currentBuild.currentResult == 'SUCCESS') ? 'good' : 'danger',
-						channel: '#sagan-content',
-						message: "${currentBuild.fullDisplayName} - `${currentBuild.currentResult}`\n${env.BUILD_URL}")
-				emailext(
-						subject: "[${currentBuild.fullDisplayName}] ${currentBuild.currentResult}",
-						mimeType: 'text/html',
-						recipientProviders: [[$class: 'CulpritsRecipientProvider'], [$class: 'RequesterRecipientProvider']],
-						body: "<a href=\"${env.BUILD_URL}\">${currentBuild.fullDisplayName} is reported as ${currentBuild.currentResult}</a>")
-			}
-		}
-	}
+        stage('Deploy to Web Server') {
+            steps {
+                script {
+                    bat 'copy target\\*.jar C:\\apache-web-server\\deploy\\'
+                }
+            }
+        }
+
+        stage('Post-Build Actions') {
+            steps {
+                mail to: 'your-email@example.com',
+                     subject: "Jenkins Build: ${currentBuild.fullDisplayName}",
+                     body: "Build completed successfully! Check artifacts."
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+    }
 }
